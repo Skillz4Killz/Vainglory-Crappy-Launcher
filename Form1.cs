@@ -26,6 +26,24 @@ namespace Vainglory_Updater_Tool
     //Create & set downloadStarted bool
     private bool downloadStarted = false;
 
+    //Create & set connection
+    private bool connection = true;
+
+    //Create & set corrupted
+    private bool corrupted = false;
+
+    //Create DateTime
+    private DateTime lastUpdate;
+
+    //Create bytes
+    private long lastBytes;
+
+    //Create elapsed time counter
+    private uint elapsedTime = 0;
+
+    //Create time out counter
+    private uint timeOut = 0;
+
     public Form1()
     {
 
@@ -37,7 +55,7 @@ namespace Vainglory_Updater_Tool
 
       //Disable install button
       installButton.Enabled = false;
-
+        
       //Get the release & local versions
       getVersions();
 
@@ -56,7 +74,7 @@ namespace Vainglory_Updater_Tool
       timer.Tick += new EventHandler(gameIsRunning);
 
       //Set the timer interval
-      timer.Interval = 100;
+      timer.Interval = 1000;
 
       //Start the timer
       timer.Start();
@@ -66,11 +84,73 @@ namespace Vainglory_Updater_Tool
     {
 
       //On no connection
-      if (!System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable())
+      if (!connection || timeOut > 10) 
       {
 
-        //Set play button text
-        playButton.Text = "No connection";
+        //On Vainglory installer running
+        if (System.Diagnostics.Process.GetProcessesByName("VainglorySetup").Length > 0)
+        {
+
+          //Create & set process
+          var process = System.Diagnostics.Process.GetProcessesByName("VainglorySetup");
+
+          //On installer corrupted
+          if (process[0].MainWindowTitle == "NSIS Error" && corrupted != true)
+          {
+
+            //delete version.txt
+            File.Delete("Version.txt");
+
+            //Get local & release versions
+            getVersions();
+
+            //Set corrupted to true
+            corrupted = true;
+          }
+
+          //Set play button text
+          playButton.Text = "Installing";
+
+          //Reset timeout
+          timeOut = 0;
+        }
+
+        //Otherwise
+        else
+        {
+
+          //Reset time out
+          timeOut = 0;
+
+          //Set play button text
+          playButton.Text = "No connection";
+
+          //Set install button text
+          installButton.Text = "Check for connection";
+
+          //Set label
+          downloadLabel.Text = "Connection timeout (Waiting for reconnection)";
+
+          //Enable install button
+          installButton.Enabled = true;
+
+          //Set connection to false
+          connection = false;
+
+          //On installer exists
+          if (File.Exists("VainglorySetup.exe"))
+          {
+
+            //Set install button text
+            installButton.Text = "Try to install";
+
+            //Set connection to true
+            connection = true;
+          }
+
+          //Dispose the timer
+          timer.Dispose();
+        }
       }
 
       //Otherwise on Vainglory app running
@@ -79,14 +159,37 @@ namespace Vainglory_Updater_Tool
 
         //Set play button text
         playButton.Text = "Running";
+
+        //Reset timeout
+        timeOut = 0;
       }
 
       //Otherwise on Vainglory installer running
       else if(System.Diagnostics.Process.GetProcessesByName("VainglorySetup").Length > 0)
       {
 
+        //Create & set process
+        var process = System.Diagnostics.Process.GetProcessesByName("VainglorySetup");
+
+        //On installer corrupted
+        if (process[0].MainWindowTitle == "NSIS Error" && corrupted != true)
+        {
+
+          //delete version.txt
+          File.Delete("Version.txt");
+
+          //Get local & release versions
+          getVersions();
+
+          //Set corrupted to true
+          corrupted = true;
+        }
+
         //Set play button text
         playButton.Text = "Installing";
+
+        //Reset timeout
+        timeOut = 0;
       }
 
       //Otherwise
@@ -103,6 +206,12 @@ namespace Vainglory_Updater_Tool
           //Download the installer
           using (WebClient wc = new WebClient())
           {
+
+            //Set bytes to 0
+            lastBytes = 0;
+
+            //Set dateTime
+            lastUpdate = DateTime.Now;
 
             //Check progress
             wc.DownloadProgressChanged += wc_DownloadProgressChanged;
@@ -133,9 +242,15 @@ namespace Vainglory_Updater_Tool
           //set play button text
           playButton.Text = "Play";
 
+          //Set install button text
+          installButton.Text = "Install";
+
           //On installer exists
           if (File.Exists("VainglorySetup.exe"))
           {
+
+            //Set install button text
+            installButton.Text = "Install";
 
             //enable play button
             installButton.Enabled = true;
@@ -143,31 +258,133 @@ namespace Vainglory_Updater_Tool
 
           //Dispose the timer
           timer.Dispose();
+
+          timeOut = 0;
+        }
+
+        //Otherwise
+        else
+        {
+
+          //Set play button text
+          playButton.Text = "Downloading update";
         }
       }
+
+
+      //Add to timeout
+      ++timeOut;
     }
 
     private void wc_DownloadProgressChanged(object sender, DownloadProgressChangedEventArgs e)
     {
 
-      //Update the progress bar
-      progressBar.Value = e.ProgressPercentage;
+      //Disable install button
+      installButton.Enabled = false;
 
-      //Set the download label text
-      downloadLabel.Text = e.ProgressPercentage.ToString();
+      //ON timer disabled
+      if(!timer.Enabled)
+      {
+
+        //Start timer
+        timer.Start();
+
+        //Get local & release versions
+        getVersions();
+      }
+
+      //On 100 ticks
+      if (elapsedTime > 50)
+      {
+
+        //On no last bytes
+        if (lastBytes == 0)
+        {
+
+          //Set last bytes as the bytes received
+          lastBytes = e.BytesReceived;
+        }
+
+        //Create & set actual date time
+        var now = DateTime.Now;
+
+        //Create & set the timespan
+        var timeSpan = now - lastUpdate;
+
+        //Create & set the bytes changed
+        var bytesChange = e.BytesReceived - lastBytes;
+
+        //Get bytes downloaded and convert to gigabytes
+        var downloaded = e.BytesReceived / 1048576;
+
+        var total = e.TotalBytesToReceive / 1048576;
+
+        //Create & set the bytes per second
+        var bytesPerSecond = bytesChange / timeSpan.TotalSeconds;
+
+        //Set the last bytes as the bytes received
+        lastBytes = e.BytesReceived;
+
+        //Set the last update as the actual date time
+        lastUpdate = now;
+
+        //Update the progress bar
+        progressBar.Value = e.ProgressPercentage;
+
+        //Set the download label text
+        downloadLabel.Text = e.ProgressPercentage.ToString() + "% " + 
+          (bytesPerSecond / 1048576).ToString("f2") + " MB/s | " + downloaded.ToString() +
+          "MB/" + total.ToString() + "MB";
+
+        //Reset elapsed time
+        elapsedTime = 0;
+
+        //Reset timeout
+        timeOut = 0;
+      }
+
+      //Add to elapsed time
+      ++elapsedTime;
+
     }
 
     private void wc_DownloadFileCompleted(object sender, AsyncCompletedEventArgs e)
     {
 
+      //Download is completed
+      downloadStarted = false;
+
+      //Set download text
+      downloadLabel.Text = "Download Completed!";
+
       //Write the release number on file
       File.WriteAllText("version.txt", release);
 
+      //Dispose timer
+      timer.Dispose();
+
+      //Try to start the installation
+      try
+      {
+
       //Start the setup
       System.Diagnostics.Process.Start("VainglorySetup.exe");
+      }
+
+      //if install failed (canceled by user or something else)
+      catch
+      {
+        //Do nothing
+      }
 
       //Get the release and local versions
       getVersions();
+
+      //Reset timeout
+      timeOut = 0;
+
+      //Start timer
+      timer.Start();
     }
 
     private void getVersions()
@@ -182,51 +399,75 @@ namespace Vainglory_Updater_Tool
       //Create & set the htmlWeb
       HtmlWeb web = new HtmlWeb();
 
-      //Create & set the html document
-      var htmlDoc = web.Load(urlAddress);
-
-      //Create & set the html node
-      var htmlNode = htmlDoc.DocumentNode.SelectSingleNode("//small/b");
-
-      //Create & set the download link
-      var htmlLink = htmlDoc.DocumentNode.SelectNodes("//p/a");
-
-      //Loop through all nodes in htmlLink
-      foreach (var nodes in htmlLink)
+      //Try to make the html info fetch
+      try
       {
 
-        //On inner text is for windows
-        if (nodes.InnerText == "Download for Windows")
+        //Create & set the html document
+        var htmlDoc = web.Load(urlAddress);
+
+        //On load made
+        connection = true;
+
+        //Create & set the html node
+        var htmlNode = htmlDoc.DocumentNode.SelectSingleNode("//small/b");
+
+        //Create & set the download link
+        var htmlLink = htmlDoc.DocumentNode.SelectNodes("//p/a");
+
+        //Loop through all nodes in htmlLink
+        foreach (var nodes in htmlLink)
         {
 
-          //Set the download link
-          downloadLink = nodes.Attributes["href"].Value;
+          //On inner text is for windows
+          if (nodes.InnerText == "Download for Windows")
+          {
+
+            //Set the download link
+            downloadLink = nodes.Attributes["href"].Value;
+          }
         }
+
+        //Set the release version
+        release = htmlNode.InnerText;
+
+        //Set the label
+        releaseLabel.Text = "Release version: " + release;
+
+        //Create & set the change logs
+        var changeLog = htmlDoc.DocumentNode.SelectNodes("//section/div/div/div/div/ul").First();
+
+        //Set initial text for change logs
+        changeLogs.Text = "What's new on this release:\n\n";
+
+        //Get all the logs
+        foreach (var node in changeLog.Elements("li"))
+        {
+
+          //Set the log box
+          changeLogs.Text += "- " + node.InnerText + "\n\n";
+        }
+
+
       }
 
-      //Set the release version
-      release = htmlNode.InnerText;
-
-      //Set the label
-      releaseLabel.Text = "Release version: " + release;
-
-      //Create & set the change logs
-      var changeLog = htmlDoc.DocumentNode.SelectNodes("//section/div/div/div/div/ul").First();
-
-      //Get all the logs
-      foreach (var node in changeLog.Elements("li"))
+      //On a info fetch fail
+      catch
       {
 
-        //Set the log box
-        changeLogs.Text += node.InnerText + "\n\n";
+        //Set connection to false
+        connection = false;
+
+        //Set the label
+        releaseLabel.Text = "Release version: NAN";
       }
 
-      //On file don't exist 
-      if (!File.Exists("version.txt"))
+        //On file don't exist 
+        if (!File.Exists("version.txt"))
       {
 
         //Create the file and write the release version on it, then close it
-        using (File.Create("version.txt")) { } 
+        using (File.Create("version.txt")) { }
 
         //Get the last local version
         local = File.ReadAllText("version.txt");
@@ -255,7 +496,7 @@ namespace Vainglory_Updater_Tool
 
       //Create & set the dialog to show
       DialogResult result = MessageBox.Show(
-        "Version 1.0.0 - By starfoxcom",
+        "Version 1.1.0 - By starfoxcom",
         "About Vainglory Crappy Launcher",
         buttons);
     }
@@ -263,8 +504,37 @@ namespace Vainglory_Updater_Tool
     private void playButton_Click(object sender, EventArgs e)
     {
 
+      //Try to start the game
+      try
+      {
+
       //Start the game
       System.Diagnostics.Process.Start("Vainglory.exe");
+      }
+
+      //If game start failed
+      catch
+      {
+
+        //Try to start the installation
+        try
+        {
+
+          //Start the setup
+          System.Diagnostics.Process.Start("VainglorySetup.exe");
+        }
+
+        //if install failed
+        catch
+        {
+          //Delete version.txt, since installer doesn't exist
+          //Don't know why user has the version.txt
+          File.Delete("version.txt");
+
+          //Get local & release versions
+          getVersions();
+        }
+      }
 
       //Disable play button
       playButton.Enabled = false;
@@ -279,14 +549,33 @@ namespace Vainglory_Updater_Tool
     private void installButton_Click(object sender, EventArgs e)
     {
 
-      //Start the setup
-      System.Diagnostics.Process.Start("VainglorySetup.exe");
+      //On connection
+      if(connection)
+      {
+
+        //Try to start the installation
+        try
+        {
+
+          //Start the setup
+          System.Diagnostics.Process.Start("VainglorySetup.exe");
+        }
+
+        //if install failed
+        catch
+        {
+          //Do nothing
+        }
+      }
 
       //Disable play button
       playButton.Enabled = false;
 
       //Disable install button
       installButton.Enabled = false;
+
+      //Get local and release versions
+      getVersions();
 
       //Init timer
       initTimer();
